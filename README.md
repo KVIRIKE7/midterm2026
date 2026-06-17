@@ -1,12 +1,12 @@
-# UNO CLI — Assignment 4
+# UNO CLI — Assignment 5
 
-A command-line UNO game built in Java, now with Maven build tooling, logging, and Docker support.
+A command-line UNO game with Maven build tooling, logging, Docker support, and database persistence via MyBatis + H2.
 
 ## Requirements
 
 - Java 11+
-- Maven 3.8+ (for local build/run)
-- Docker (for containerised run)
+- Maven 3.8+
+- Docker (optional)
 
 ---
 
@@ -22,15 +22,15 @@ mvn compile
 mvn test
 ```
 
-All characterization tests run automatically. Results are printed to the terminal.
+Runs both characterization tests and persistence tests. Persistence tests use an isolated in-memory H2 database — no setup required.
 
-## Package (create runnable JAR)
+## Package
 
 ```bash
 mvn package
 ```
 
-This produces `target/uno-1.0.0.jar` — a fat jar with all dependencies included.
+Produces `target/uno-1.0.0.jar`.
 
 ## Local Run
 
@@ -43,27 +43,35 @@ java -jar target/uno-1.0.0.jar
 | Flag | Description |
 |------|-------------|
 | `--bots N` | Number of bot players (default: 3) |
-| `--games N` | Number of games to play (default: 1) |
+| `--games N` | Number of rounds to play (default: 1) |
 | `--human` | Add a human player |
 | `--quiet` | Suppress turn-by-turn output |
-| `--seed N` | Set random seed for reproducibility |
+| `--seed N` | Set random seed |
+| `--report` | Show game history and statistics |
 
-Example with a human player:
+### Examples
+
 ```bash
-java -jar target/uno-1.0.0.jar --bots 2 --human
+# Play 5 quiet rounds
+java -jar target/uno-1.0.0.jar --games 5 --quiet
+
+# View game history after playing
+java -jar target/uno-1.0.0.jar --report
 ```
+
+---
+
+## Persistence
+
+Game results are saved automatically to a local H2 database file (`uno-data.mv.db`) on every run.
+
+See [docs/database.md](docs/database.md) for full details on schema, configuration, and how to reset data.
 
 ---
 
 ## Logging
 
-Game events are written to `uno.log` in the working directory. Logged events include:
-
-- Game session start/end
-- Each player's turn
-- Cards played and drawn
-- Invalid input and illegal card attempts
-- Round winner and points scored
+Game events are written to `uno.log` in the working directory.
 
 ---
 
@@ -75,20 +83,15 @@ docker build -t uno-game .
 
 ## Docker Run
 
-Bot-only game (default):
 ```bash
-docker run --rm uno-game
+docker run --rm uno-game --games 3 --quiet
 ```
 
-With options (e.g. 2 bots, 5 games, quiet mode):
-```bash
-docker run --rm uno-game --bots 2 --games 5 --quiet
-```
+View report from a persistent volume:
 
-> **Note:** Interactive human mode (`--human`) requires a TTY:
-> ```bash
-> docker run --rm -it uno-game --human
-> ```
+```bash
+docker run --rm -v $(pwd)/data:/app/data uno-game --report
+```
 
 ---
 
@@ -96,16 +99,32 @@ docker run --rm uno-game --bots 2 --games 5 --quiet
 
 ```
 ├── src/
-│   ├── main/java/
-│   │   ├── Main.java           # Entry point and game loop
-│   │   ├── GameState.java      # All mutable game state
-│   │   ├── Rules.java          # Card legality logic
-│   │   ├── Cards.java          # Card string utilities
-│   │   ├── BotStrategy.java    # Bot AI
-│   │   ├── ConsoleView.java    # All console output
-│   │   └── DeckFactory.java    # Deck builder
+│   ├── main/
+│   │   ├── java/
+│   │   │   ├── Main.java
+│   │   │   ├── GameState.java
+│   │   │   ├── Rules.java
+│   │   │   ├── Cards.java
+│   │   │   ├── BotStrategy.java
+│   │   │   ├── ConsoleView.java
+│   │   │   ├── DeckFactory.java
+│   │   │   └── persistence/
+│   │   │       ├── GameRepository.java
+│   │   │       ├── GameMapper.java
+│   │   │       ├── GameRecord.java
+│   │   │       ├── RoundRecord.java
+│   │   │       ├── ScoreRecord.java
+│   │   │       └── WinCount.java
+│   │   └── resources/
+│   │       ├── mybatis-config.xml
+│   │       ├── schema.sql
+│   │       └── persistence/
+│   │           └── GameMapper.xml
 │   └── test/java/
-│       └── CharacterizationTests.java  # JUnit 5 regression tests
+│       ├── CharacterizationTests.java
+│       └── PersistenceTests.java
+├── docs/
+│   └── database.md
 ├── pom.xml
 ├── Dockerfile
 └── README.md

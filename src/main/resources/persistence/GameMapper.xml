@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="persistence.GameMapper">
+
+  <!-- ── games ─────────────────────────────────────── -->
+
+  <insert id="insertGame" useGeneratedKeys="true" keyProperty="id"
+          parameterType="persistence.GameRecord">
+    INSERT INTO games (started_at, ended_at, winner)
+    VALUES (#{startedAt}, #{endedAt}, #{winner})
+  </insert>
+
+  <update id="updateGame" parameterType="persistence.GameRecord">
+    UPDATE games SET ended_at = #{endedAt}, winner = #{winner} WHERE id = #{id}
+  </update>
+
+  <select id="recentGames" resultType="persistence.GameRecord">
+    SELECT id, started_at AS startedAt, ended_at AS endedAt, winner
+    FROM games
+    ORDER BY started_at DESC
+    LIMIT #{limit}
+  </select>
+
+  <!-- ── rounds ────────────────────────────────────── -->
+
+  <insert id="insertRound" parameterType="persistence.RoundRecord">
+    INSERT INTO rounds (game_id, round_num, winner, played_at)
+    VALUES (#{gameId}, #{roundNum}, #{winner}, #{playedAt})
+  </insert>
+
+  <!-- ── scores ────────────────────────────────────── -->
+
+  <insert id="insertScore" parameterType="persistence.ScoreRecord">
+    INSERT INTO scores (game_id, player, score)
+    VALUES (#{gameId}, #{player}, #{score})
+  </insert>
+
+  <!-- ── report queries ────────────────────────────── -->
+
+  <select id="playerWinCounts" resultType="persistence.WinCount">
+    SELECT winner AS player, COUNT(*) AS wins
+    FROM games
+    WHERE winner IS NOT NULL
+    GROUP BY winner
+    ORDER BY wins DESC
+  </select>
+
+  <select id="highestScores" resultType="persistence.ScoreRecord">
+    SELECT game_id AS gameId, player, score
+    FROM scores
+    ORDER BY score DESC
+    LIMIT #{limit}
+  </select>
+
+</mapper>

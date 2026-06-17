@@ -16,6 +16,21 @@
   </properties>
 
   <dependencies>
+
+    <!-- MyBatis ORM -->
+    <dependency>
+      <groupId>org.mybatis</groupId>
+      <artifactId>mybatis</artifactId>
+      <version>3.5.16</version>
+    </dependency>
+
+    <!-- H2 database (file-based for runtime, in-memory for tests) -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <version>2.2.224</version>
+    </dependency>
+
     <!-- JUnit Jupiter for tests -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -23,36 +38,28 @@
       <version>5.10.2</version>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
   <build>
     <plugins>
 
-      <!-- Compiler -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.12.1</version>
       </plugin>
 
-      <!-- Surefire: runs tests via mvn test -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
         <configuration>
-          <!-- CharacterizationTests uses a main() method, not JUnit annotations.
-               We include it via includes so Surefire finds it. -->
-          <includes>
-            <include>**/*Tests.java</include>
-            <include>**/*Test.java</include>
-          </includes>
-          <!-- Run CharacterizationTests main() directly as a test -->
           <useFile>false</useFile>
         </configuration>
       </plugin>
 
-      <!-- Shade: builds a fat/uber jar with Main as entry point -->
+      <!-- Fat jar with Main as entry point -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
@@ -66,6 +73,10 @@
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>Main</mainClass>
                 </transformer>
+                <!-- Needed so MyBatis XML mappers are merged correctly -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/services/java.sql.Driver</resource>
+                </transformer>
               </transformers>
               <createDependencyReducedPom>false</createDependencyReducedPom>
             </configuration>
@@ -74,5 +85,12 @@
       </plugin>
 
     </plugins>
+
+    <!-- Make sure XML mapper files are included in the jar -->
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+    </resources>
   </build>
 </project>

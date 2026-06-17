@@ -1,5 +1,11 @@
+import persistence.GameRecord;
+import persistence.GameRepository;
+import persistence.ScoreRecord;
+import persistence.WinCount;
+
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
 import java.util.logging.Logger;
@@ -9,10 +15,9 @@ import java.util.logging.SimpleFormatter;
 import java.io.IOException;
 
 public class Main {
-    // Logger
+
     static final Logger logger = Logger.getLogger("UNO");
 
-    // Legacy static fields kept so CharacterizationTests can read/write them
     static ArrayList<String> playerNames   = new ArrayList<>();
     static ArrayList<Boolean> humanPlayers = new ArrayList<>();
     static ArrayList<ArrayList<String>> hands = new ArrayList<>();
@@ -28,6 +33,9 @@ public class Main {
     static Scanner scanner = new Scanner(System.in);
     static GameState state;
 
+    // Persistence — null when running tests that don't need DB
+    static GameRepository repository;
+
     static void setupLogging() {
         try {
             FileHandler fh = new FileHandler("uno.log", true);
@@ -35,7 +43,7 @@ public class Main {
             logger.addHandler(fh);
             logger.setUseParentHandlers(false);
         } catch (IOException e) {
-            System.err.println("Warning: could not open log file, logging to console only.");
+            System.err.println("Warning: could not open log file.");
         }
     }
 
@@ -45,6 +53,7 @@ public class Main {
         int bots = 3;
         int games = 1;
         boolean human = false;
+        boolean report = false;
         long seed = System.currentTimeMillis();
 
         for (int i = 0; i < args.length; i++) {
@@ -58,13 +67,23 @@ public class Main {
                 quiet = true;
             } else if (args[i].equals("--seed") && i + 1 < args.length) {
                 seed = Long.parseLong(args[++i]);
+            } else if (args[i].equals("--report")) {
+                report = true;
             } else if (args[i].equals("--self-test")) {
                 selfTest();
                 return;
             } else if (args[i].equals("--help")) {
-                System.out.println("Usage: java -jar uno.jar [--bots N] [--games N] [--human] [--quiet] [--seed N]");
+                System.out.println("Usage: java -jar uno.jar [--bots N] [--games N] [--human] [--quiet] [--seed N] [--report]");
                 return;
             }
+        }
+
+        // Initialise database
+        repository = new GameRepository("production");
+
+        if (report) {
+            printReport();
+            return;
         }
 
         random = new Random(seed);
@@ -79,13 +98,69 @@ public class Main {
 
         ConsoleView view = new ConsoleView(quiet);
 
+        GameRecord gameRecord = repository.startGame();
+        int roundNum = 0;
+
         for (int g = 1; g <= games; g++) {
             view.showGameHeader(g);
-            playGame(view);
+            String roundWinner = playGame(view);
+            roundNum++;
+            if (roundWinner != null) {
+                repository.saveRound(gameRecord.id, roundNum, roundWinner);
+            }
         }
 
+        // Determine overall winner (highest score)
+        String sessionWinner = playerNames.get(0);
+        for (int i = 1; i < playerNames.size(); i++) {
+            if (scores[i] > scores[playerNames.indexOf(sessionWinner)]) {
+                sessionWinner = playerNames.get(i);
+            }
+        }
+
+        repository.endGame(gameRecord, sessionWinner);
+        repository.saveScores(gameRecord.id, playerNames, scores);
+
         view.showFinalScores(playerNames, scores);
-        logger.info("Game session ended.");
+        logger.info("Game session ended. Overall winner: " + sessionWinner);
+    }
+
+    static void printReport() {
+        System.out.println("\n===== UNO GAME HISTORY REPORT =====\n");
+
+        System.out.println("-- Recent Games (last 10) --");
+        List<GameRecord> recent = repository.recentGames(10);
+        if (recent.isEmpty()) {
+            System.out.println("  No games recorded yet.");
+        } else {
+            for (GameRecord g : recent) {
+                System.out.println("  Game #" + g.id
+                        + " | Started: " + g.startedAt
+                        + " | Winner: " + (g.winner != null ? g.winner : "N/A"));
+            }
+        }
+
+        System.out.println("\n-- Player Win Counts --");
+        List<WinCount> wins = repository.playerWinCounts();
+        if (wins.isEmpty()) {
+            System.out.println("  No wins recorded yet.");
+        } else {
+            for (WinCount w : wins) {
+                System.out.println("  " + w.player + ": " + w.wins + " win(s)");
+            }
+        }
+
+        System.out.println("\n-- Highest Scores (top 10) --");
+        List<ScoreRecord> top = repository.highestScores(10);
+        if (top.isEmpty()) {
+            System.out.println("  No scores recorded yet.");
+        } else {
+            for (ScoreRecord s : top) {
+                System.out.println("  " + s.player + ": " + s.score + " pts (game #" + s.gameId + ")");
+            }
+        }
+
+        System.out.println("\n===================================\n");
     }
 
     static void setupPlayers(int bots, boolean human) {
@@ -109,7 +184,8 @@ public class Main {
         playGame(new ConsoleView(quiet));
     }
 
-    static void playGame(ConsoleView view) {
+    // Returns the name of the round winner, or null if safety limit hit
+    static String playGame(ConsoleView view) {
         state.deck.clear();
         state.deck.addAll(DeckFactory.buildStandardDeck());
         state.shuffleDeck(random);
@@ -142,10 +218,7 @@ public class Main {
             String name = state.currentPlayerName();
             ArrayList<String> hand = state.currentHand();
 
-            logger.info("Player turn: " + name + " | Up card: " + state.upCard
-                    + (state.calledColor.isEmpty() ? "" : " called " + state.calledColor)
-                    + " | Hand size: " + hand.size());
-
+            logger.info("Player turn: " + name + " | Up: " + state.upCard + " | Hand size: " + hand.size());
             view.showTurnHeader(state.upCard, state.calledColor, name, hand);
 
             int chosen = state.currentPlayerIsHuman()
@@ -155,7 +228,7 @@ public class Main {
             if (chosen == -1) {
                 String drawn = state.draw(random);
                 hand.add(drawn);
-                logger.info(name + " draws a card: " + drawn);
+                logger.info(name + " draws: " + drawn);
                 view.showDraw(name, drawn);
                 if (Rules.isLegal(drawn, state.upCard, state.calledColor)) {
                     if (!state.currentPlayerIsHuman()) {
@@ -172,7 +245,7 @@ public class Main {
 
             if (chosen >= 0) {
                 if (chosen >= hand.size()) {
-                    logger.warning(name + " chose invalid card index " + chosen + " — penalty draw.");
+                    logger.warning(name + " invalid index — penalty.");
                     view.showPenaltyInvalidIndex(name);
                     hand.add(state.draw(random));
                     state.advanceTurn();
@@ -182,7 +255,7 @@ public class Main {
 
                 String card = hand.get(chosen);
                 if (!Rules.isLegal(card, state.upCard, state.calledColor)) {
-                    logger.warning(name + " attempted illegal card " + card + " — penalty draw.");
+                    logger.warning(name + " illegal card " + card + " — penalty.");
                     view.showPenaltyIllegalCard(name, card);
                     hand.add(state.draw(random));
                     state.advanceTurn();
@@ -216,10 +289,10 @@ public class Main {
                     }
                     state.scores[state.currentPlayer] += points;
                     scores[state.currentPlayer] = state.scores[state.currentPlayer];
-                    logger.info("Round ended. Winner: " + name + " | Points scored: " + points);
+                    logger.info("Round ended. Winner: " + name + " | Points: " + points);
                     view.showWin(name, points);
                     syncFromState();
-                    return;
+                    return name;
                 }
 
                 applyCardEffect(card, view);
@@ -229,8 +302,9 @@ public class Main {
             }
             syncFromState();
         }
-        logger.warning("Game stopped at safety limit (3000 turns).");
+        logger.warning("Safety limit reached.");
         view.showSafetyLimit();
+        return null;
     }
 
     static void applyCardEffect(String card, ConsoleView view) {
@@ -287,11 +361,11 @@ public class Main {
                 if (hand.get(i).equals(input)) {
                     if (Rules.isLegal(hand.get(i), state.upCard, state.calledColor)) return i;
                     System.out.println("That card is not legal.");
-                    logger.info("Human player entered illegal card: " + input);
+                    logger.info("Human invalid card: " + input);
                 }
             }
             System.out.println("Card not found.");
-            logger.info("Human player entered invalid input: " + input);
+            logger.info("Human invalid input: " + input);
         }
     }
 
@@ -304,7 +378,7 @@ public class Main {
             if (input.equals("G")) return "G";
             if (input.equals("B")) return "B";
             System.out.println("Bad color.");
-            logger.info("Human player entered invalid color: " + input);
+            logger.info("Human invalid color: " + input);
         }
     }
 

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+  PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-config.dtd">
+
+<configuration>
+
+  <environments default="production">
+
+    <!-- Production: file-based H2 database -->
+    <environment id="production">
+      <transactionManager type="JDBC"/>
+      <dataSource type="POOLED">
+        <property name="driver"   value="org.h2.Driver"/>
+        <property name="url"      value="jdbc:h2:file:./uno-data;AUTO_SERVER=TRUE"/>
+        <property name="username" value="sa"/>
+        <property name="password" value=""/>
+      </dataSource>
+    </environment>
+
+    <!-- Test: in-memory H2, isolated per test run -->
+    <environment id="test">
+      <transactionManager type="JDBC"/>
+      <dataSource type="POOLED">
+        <property name="driver"   value="org.h2.Driver"/>
+        <property name="url"      value="jdbc:h2:mem:uno_test;DB_CLOSE_DELAY=-1"/>
+        <property name="username" value="sa"/>
+        <property name="password" value=""/>
+      </dataSource>
+    </environment>
+
+  </environments>
+
+  <mappers>
+    <mapper resource="persistence/GameMapper.xml"/>
+  </mappers>
+
+</configuration>
