@@ -31,6 +31,7 @@ public class Main {
     static boolean quiet = false;
     static Random random = new Random();
     static Scanner scanner = new Scanner(System.in);
+    static final int TARGET_SCORE = 500;
     static GameState state;
 
     // Persistence — null when running tests that don't need DB
@@ -101,14 +102,26 @@ public class Main {
         GameRecord gameRecord = repository.startGame();
         int roundNum = 0;
 
-        for (int g = 1; g <= games; g++) {
-            view.showGameHeader(g);
-            String roundWinner = playGame(view);
+        String overallWinner = null;
+
+        while (overallWinner == null) {
             roundNum++;
+            if (!quiet) System.out.println("\n=== Round " + roundNum + " ===");
+            String roundWinner = playGame(view);
             if (roundWinner != null) {
                 repository.saveRound(gameRecord.id, roundNum, roundWinner);
+                for (int i = 0; i < playerNames.size(); i++) {
+                    if (scores[i] >= TARGET_SCORE) {
+                        overallWinner = playerNames.get(i);
+                        break;
+                    }
+                }
             }
         }
+
+        repository.endGame(gameRecord, overallWinner);
+        repository.saveScores(gameRecord.id, playerNames, scores);
+        System.out.println("\n*** " + overallWinner + " wins with " + TARGET_SCORE + "+ points! ***");
 
         // Determine overall winner (highest score)
         String sessionWinner = playerNames.get(0);
@@ -278,7 +291,19 @@ public class Main {
                     view.showCalledColor(name, state.calledColor);
                 }
 
-                if (hand.size() == 1) view.showUno(name);
+                if (hand.size() == 1) {
+                    view.showUno(name);
+                    if (state.currentPlayerIsHuman()) {
+                        System.out.print("Say UNO! type 'UNO' or miss it: ");
+                        String unoCall = scanner.nextLine().trim().toUpperCase();
+                        if (!unoCall.equals("UNO")) {
+                            System.out.println("Missed UNO! You draw 2 penalty cards.");
+                            logger.info(name + " missed UNO — penalty 2 cards.");
+                            hand.add(state.draw(random));
+                            hand.add(state.draw(random));
+                        }
+                    }
+                }
 
                 if (hand.isEmpty()) {
                     int points = 0;
